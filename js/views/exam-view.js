@@ -82,3 +82,95 @@ class ExamsView extends AcmeView {
     this.table.addEventListener('row-action', (e) => this.#onTableAction(e.detail));
     this.$('#exam-form').addEventListener('submit', (e) => this.#onExamSubmit(e));
     this.$('#exam-cancel').addEventListener('click', () => this.#resetExam());
+
+    // Delegación de eventos del panel de preguntas.
+    const qCard = this.$('#questions-card');
+    qCard.addEventListener('click', (e) => this.#onQuestionsClick(e));
+    qCard.addEventListener('submit', (e) => { e.preventDefault(); this.#saveQuestion(); });
+    qCard.addEventListener('input', () => this.#syncDraft());
+    qCard.addEventListener('change', () => this.#syncDraft());
+
+    this.#refreshTable();
+  }
+
+  /* ---------- Exámenes ---------- */
+
+  #refreshTable() {
+    const list = exams.list();
+    this.table.rows = list;
+    this.table.selectedId = this.#examId;
+    this.$('#count').textContent = `${list.length} ${list.length === 1 ? 'examen' : 'exámenes'}`;
+  }
+
+  #resetExam() {
+    this.#examId = null;
+    this.#questionId = null;
+    this.#draft = blankDraft();
+    this.$('#exam-form').reset();
+    this.$('#form-title').textContent = 'Nuevo examen';
+    this.$('#exam-submit').textContent = 'Crear examen';
+    this.$('#exam-cancel').hidden = true;
+    this.$('#questions-card').hidden = true;
+    this.setMessage(this.$('#exam-msg'), '');
+    this.table.selectedId = null;
+  }
+
+  #startEdit(exam) {
+    this.#examId = exam.id;
+    this.#questionId = null;
+    this.#draft = blankDraft();
+    const form = this.$('#exam-form');
+    ['codigo', 'titulo', 'tiempo', 'aprobacion', 'descripcion'].forEach((k) => { form[k].value = exam[k]; });
+    this.$('#form-title').textContent = `Editando: ${exam.titulo}`;
+    this.$('#exam-submit').textContent = 'Actualizar examen';
+    this.$('#exam-cancel').hidden = false;
+    this.setMessage(this.$('#exam-msg'), '');
+    this.table.selectedId = exam.id;
+    this.#renderQuestions();
+    form.titulo.focus();
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async #onTableAction({ name, id }) {
+    const exam = exams.get(id);
+    if (!exam) return;
+    if (name === 'edit') return this.#startEdit(exam);
+    if (name === 'delete') {
+      const ok = await confirmDialog({
+        title: 'Eliminar examen',
+        message: `Se eliminará «${exam.titulo}» con sus ${exam.preguntas.length} preguntas. Esta acción no se puede deshacer.`,
+        confirmText: 'Eliminar', danger: true,
+      });
+      if (!ok) return;
+      exams.remove(id);
+      if (this.#examId === id) this.#resetExam();
+      toast('Examen eliminado.', 'success');
+      this.#refreshTable();
+    }
+  }
+
+  #onExamSubmit(e) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const msg = this.$('#exam-msg');
+    this.setMessage(msg, '');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    try {
+      const data = readForm(form);
+      if (this.#examId) {
+        exams.update(this.#examId, data);
+        toast('Examen actualizado.', 'success');
+        this.#renderQuestions();
+      } else {
+        const created = exams.create(data);
+        toast('Examen creado. Ahora agrégale preguntas.', 'success');
+        this.#refreshTable();
+        this.#startEdit(created);
+        this.$('#q-texto')?.focus();
+        return;
+      }
+      this.#refreshTable();
+    } catch (err) {
+      this.setMessage(msg, err.message);
+    }
+  }
