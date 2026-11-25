@@ -49,3 +49,56 @@ class ExamTakerView extends AcmeView {
         </div>
       </section>`;
   }
+
+    /* ---------- 1. Identificación ---------- */
+  
+    #renderIdentify() {
+      const e = this.#exam;
+      this.innerHTML = `
+        <section class="page narrow">
+          <a class="back-link" href="#/">← Todos los exámenes</a>
+          <div class="card">
+            <span class="badge">${esc(e.codigo)}</span>
+            <h1 tabindex="-1">${esc(e.titulo)}</h1>
+            <p class="muted">${esc(e.descripcion)}</p>
+            <dl class="facts">
+              <div><dt>Tiempo</dt><dd>${e.tiempo} min</dd></div>
+              <div><dt>Para aprobar</dt><dd>${e.aprobacion}%</dd></div>
+              <div><dt>Preguntas</dt><dd>${e.preguntas.length}</dd></div>
+            </dl>
+            <p class="notice">⏱ El tiempo empieza a correr cuando presionas <strong>Comenzar</strong> y no se puede pausar.</p>
+  
+            <form id="id-form" novalidate>
+              <div class="field">
+                <label for="identificacion">Número de identificación</label>
+                <input id="identificacion" name="identificacion" inputmode="numeric" required pattern="\\d{5,15}" maxlength="15" autocomplete="off">
+                <small>Solo números (5 a 15 dígitos).</small>
+              </div>
+              <div class="field">
+                <label for="nombre">Nombre completo</label>
+                <input id="nombre" name="nombre" required minlength="3" maxlength="80" autocomplete="name">
+              </div>
+              <p id="msg" class="form-message" role="alert"></p>
+              <button class="btn btn-primary btn-block" type="submit">Comenzar examen</button>
+            </form>
+          </div>
+        </section>`;
+  
+      this.$('#id-form').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const form = ev.currentTarget;
+        const identificacion = form.identificacion.value.trim();
+        const nombre = form.nombre.value.trim().replace(/\s+/g, ' ');
+        if (!/^\d{5,15}$/.test(identificacion)) return this.setMessage(this.$('#msg'), 'La identificación debe tener entre 5 y 15 dígitos.'), form.identificacion.focus();
+        if (nombre.length < 3) return this.setMessage(this.$('#msg'), 'Escribe tu nombre completo.'), form.nombre.focus();
+  
+        this.#progress = {
+          identificacion, nombre,
+          inicio: Date.now(),
+          deadline: Date.now() + e.tiempo * 60_000,
+          answers: {},
+        };
+        sessionStore.write(progressKey(e.id), this.#progress);
+        this.#renderExam();
+      });
+    }
