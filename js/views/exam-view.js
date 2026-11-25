@@ -231,3 +231,92 @@ class ExamsView extends AcmeView {
         </div>
       </form>`;
   }
+
+  /** Copia lo escrito en el DOM al borrador (antes de re-renderizar). */
+  #syncDraft() {
+    const form = this.$('#q-form');
+    if (!form) return;
+    this.#draft.texto = form.querySelector('#q-texto').value;
+    const checked = Number(form.querySelector('input[name=correcta]:checked')?.value ?? -1);
+    this.#draft.respuestas = [...form.querySelectorAll('.a-text')].map((input, i) => ({
+      texto: input.value, correcta: i === checked,
+    }));
+  }
+
+  #onQuestionsClick(e) {
+    const exam = exams.get(this.#examId);
+    if (!exam) return;
+    const t = e.target.closest('button');
+    if (!t) return;
+
+    if (t.hasAttribute('data-a-add')) {
+      this.#syncDraft();
+      if (this.#draft.respuestas.length < MAX_ANSWERS) this.#draft.respuestas.push({ texto: '', correcta: false });
+      this.#renderQuestions();
+      this.$$('.a-text').at(-1)?.focus();
+    } else if (t.dataset.aDel !== undefined) {
+      this.#syncDraft();
+      const i = Number(t.dataset.aDel);
+      const wasCorrect = this.#draft.respuestas[i].correcta;
+      this.#draft.respuestas.splice(i, 1);
+      if (wasCorrect) this.#draft.respuestas[0].correcta = true;
+      this.#renderQuestions();
+    } else if (t.dataset.qEdit) {
+      const q = exam.preguntas.find((p) => p.id === t.dataset.qEdit);
+      if (!q) return;
+      this.#questionId = q.id;
+      this.#draft = { texto: q.texto, respuestas: q.respuestas.map((r) => ({ texto: r.texto, correcta: r.correcta })) };
+      this.#renderQuestions();
+      this.$('#q-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      this.$('#q-texto').focus();
+    } else if (t.dataset.qDel) {
+      this.#deleteQuestion(exam, t.dataset.qDel);
+    } else if (t.hasAttribute('data-q-cancel')) {
+      this.#questionId = null;
+      this.#draft = blankDraft();
+      this.#renderQuestions();
+    }
+  }
+
+  async #deleteQuestion(exam, qid) {
+    const q = exam.preguntas.find((p) => p.id === qid);
+    if (!q) return;
+    const ok = await confirmDialog({
+      title: 'Eliminar pregunta', message: `¿Eliminar «${q.texto}»?`, confirmText: 'Eliminar', danger: true,
+    });
+    if (!ok) return;
+    exams.removeQuestion(exam.id, qid);
+    if (this.#questionId === qid) { this.#questionId = null; this.#draft = blankDraft(); }
+    toast('Pregunta eliminada.', 'success');
+    this.#renderQuestions();
+    this.#refreshTable();
+  }
+
+  #saveQuestion() {
+    this.#syncDraft();
+    const msg = this.$('#q-msg');
+    this.setMessage(msg, '');
+    const payload = {
+      texto: this.#draft.texto,
+      respuestas: this.#draft.respuestas,
+    };
+    try {
+      if (this.#questionId) {
+        exams.updateQuestion(this.#examId, this.#questionId, payload);
+        toast('Pregunta actualizada.', 'success');
+      } else {
+        exams.addQuestion(this.#examId, payload);
+        toast('Pregunta agregada.', 'success');
+      }
+      this.#questionId = null;
+      this.#draft = blankDraft();
+      this.#renderQuestions();
+      this.#refreshTable();
+      this.$('#q-texto').focus();
+    } catch (err) {
+      this.setMessage(msg, err.message);
+    }
+  }
+}
+
+customElements.define('exams-view', ExamsView);
