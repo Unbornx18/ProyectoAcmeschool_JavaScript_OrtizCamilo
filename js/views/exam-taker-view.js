@@ -176,3 +176,75 @@ class ExamTakerView extends AcmeView {
         timer.addEventListener('timer-end', () => this.#finish('tiempo'));
         timer.start(p.deadline, e.tiempo * 60);
       }
+
+        /* ---------- 3. Resultado ---------- */
+      
+        #finish(reason) {
+          if (this.#finished) return;
+          this.#finished = true;
+          window.removeEventListener('beforeunload', this.#beforeUnload);
+          document.querySelector('acme-confirm')?.remove();
+      
+          const e = this.#exam;
+          const p = this.#progress;
+          const result = exams.grade(e, p.answers);
+          const used = Math.min(e.tiempo * 60, Math.round((Math.min(Date.now(), p.deadline) - p.inicio) / 1000));
+          attempts.save({
+            exam: e, identificacion: p.identificacion, nombre: p.nombre,
+            answers: p.answers, result, tiempoUsado: used, terminadoPor: reason,
+          });
+          sessionStore.remove(progressKey(e.id));
+          this.#renderResult(result, used, reason);
+        }
+      
+        #renderResult(result, used, reason) {
+          const e = this.#exam;
+          const p = this.#progress;
+          const { aprobado, porcentaje, aciertos, total } = result;
+          const C = 2 * Math.PI * 54;
+      
+          this.innerHTML = `
+            <section class="page narrow">
+              <div class="card result ${aprobado ? 'pass' : 'fail'}">
+                <p class="muted">${esc(e.titulo)} · ${esc(p.nombre)}</p>
+                <div class="ring" role="img" aria-label="Porcentaje de respuestas acertadas: ${porcentaje}%">
+                  <svg viewBox="0 0 120 120" aria-hidden="true">
+                    <circle class="track" cx="60" cy="60" r="54"/>
+                    <circle class="bar" cx="60" cy="60" r="54" stroke-dasharray="${C}" stroke-dashoffset="${C}"/>
+                  </svg>
+                  <span class="ring-text">${porcentaje}%</span>
+                </div>
+                <h1 tabindex="-1">${aprobado ? '¡Felicitaciones, aprobaste el examen!' : 'No aprobaste el examen'}</h1>
+                <p class="result-msg" role="status">
+                  ${aprobado
+                    ? `Superaste el ${e.aprobacion}% requerido.`
+                    : `Necesitabas al menos el ${e.aprobacion}% para aprobar. ¡Sigue practicando e inténtalo de nuevo!`}
+                </p>
+                ${reason === 'tiempo' ? '<p class="notice">⏰ Se acabó el tiempo: el examen se envió automáticamente.</p>' : ''}
+                <dl class="facts">
+                  <div><dt>Respuestas acertadas</dt><dd>${aciertos} de ${total}</dd></div>
+                  <div><dt>Porcentaje</dt><dd>${porcentaje}%</dd></div>
+                  <div><dt>Tiempo usado</dt><dd>${esc(formatClock(used))}</dd></div>
+                </dl>
+                <div class="form-actions center">
+                  <a class="btn btn-primary" href="#/">Ver más exámenes</a>
+                  <a class="btn btn-ghost" href="#/examen/${encodeURIComponent(e.id)}" id="retry">Intentar de nuevo</a>
+                </div>
+              </div>
+            </section>`;
+      
+          // Anima el anillo de progreso.
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            this.$('.ring .bar')?.setAttribute('stroke-dashoffset', String(C * (1 - porcentaje / 100)));
+          }));
+          // «Intentar de nuevo» en la misma ruta no dispara hashchange: recarga la vista.
+          this.$('#retry').addEventListener('click', (ev) => {
+            ev.preventDefault();
+            const view = document.createElement('exam-taker-view');
+            view.params = { ...this.params };
+            this.replaceWith(view);
+          });
+        }
+      }
+      
+      customElements.define('exam-taker-view', ExamTakerView);
