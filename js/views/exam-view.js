@@ -174,3 +174,60 @@ class ExamsView extends AcmeView {
       this.setMessage(msg, err.message);
     }
   }
+
+  /* ---------- Preguntas ---------- */
+
+  #renderQuestions() {
+    const card = this.$('#questions-card');
+    const exam = exams.get(this.#examId);
+    if (!exam) { card.hidden = true; return; }
+    card.hidden = false;
+    const editing = this.#questionId !== null;
+    const d = this.#draft;
+
+    const list = exam.preguntas.map((q, i) => `
+      <li class="question-item${q.id === this.#questionId ? ' selected' : ''}">
+        <div class="q-head">
+          <strong>${i + 1}. ${esc(q.texto)}</strong>
+          <span class="q-buttons">
+            <button type="button" class="btn btn-sm btn-ghost" data-q-edit="${esc(q.id)}" aria-label="Editar pregunta ${i + 1}">Editar</button>
+            <button type="button" class="btn btn-sm btn-danger" data-q-del="${esc(q.id)}" aria-label="Eliminar pregunta ${i + 1}">Eliminar</button>
+          </span>
+        </div>
+        <ul class="answers" role="list">
+          ${q.respuestas.map((r) => `<li class="${r.correcta ? 'correct' : ''}">${esc(r.texto)}${r.correcta ? ' <span class="badge badge-ok">Correcta</span>' : ''}</li>`).join('')}
+        </ul>
+      </li>`).join('');
+
+    const answerRows = d.respuestas.map((r, i) => `
+      <div class="answer-row">
+        <input type="radio" name="correcta" value="${i}" ${r.correcta ? 'checked' : ''} aria-label="Marcar la respuesta ${i + 1} como correcta" title="Respuesta correcta">
+        <input type="text" class="a-text" data-i="${i}" value="${esc(r.texto)}" maxlength="150" required
+               placeholder="Descripción de la respuesta ${i + 1}" aria-label="Descripción de la respuesta ${i + 1}">
+        <button type="button" class="btn btn-sm btn-ghost" data-a-del="${i}" aria-label="Quitar respuesta ${i + 1}" ${d.respuestas.length <= MIN_ANSWERS ? 'disabled' : ''}>✕</button>
+      </div>`).join('');
+
+    card.innerHTML = `
+      <h2>Preguntas de «${esc(exam.titulo)}» <span class="badge">${exam.preguntas.length}</span></h2>
+      ${exam.preguntas.length
+        ? `<ol class="questions" role="list">${list}</ol>`
+        : '<p class="empty">Este examen todavía no tiene preguntas.</p>'}
+
+      <form id="q-form" class="q-form" novalidate>
+        <h3>${editing ? 'Editar pregunta' : 'Agregar pregunta'}</h3>
+        <div class="field">
+          <label for="q-texto">Enunciado</label>
+          <textarea id="q-texto" rows="2" required minlength="5" maxlength="300">${esc(d.texto)}</textarea>
+        </div>
+        <fieldset class="field">
+          <legend>Respuestas — marca la correcta (solo una)</legend>
+          <div id="answers-box">${answerRows}</div>
+          <button type="button" class="btn btn-sm btn-ghost" data-a-add ${d.respuestas.length >= MAX_ANSWERS ? 'disabled' : ''}>+ Agregar respuesta</button>
+        </fieldset>
+        <p id="q-msg" class="form-message" role="alert"></p>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">${editing ? 'Actualizar pregunta' : 'Guardar pregunta'}</button>
+          ${editing ? '<button class="btn btn-ghost" type="button" data-q-cancel>Cancelar</button>' : ''}
+        </div>
+      </form>`;
+  }
