@@ -102,3 +102,77 @@ class ExamTakerView extends AcmeView {
         this.#renderExam();
       });
     }
+
+      /* ---------- 2. Examen ---------- */
+    
+      #renderExam() {
+        const e = this.#exam;
+        const p = this.#progress;
+        window.addEventListener('beforeunload', this.#beforeUnload);
+    
+        const questions = e.preguntas.map((q, i) => `
+          <fieldset class="question" data-q="${esc(q.id)}">
+            <legend><span class="q-num">${i + 1}</span> ${esc(q.texto)}</legend>
+            <div class="options">
+              ${q.respuestas.map((r) => `
+                <label class="option">
+                  <input type="radio" name="q-${esc(q.id)}" value="${esc(r.id)}" ${p.answers[q.id] === r.id ? 'checked' : ''}>
+                  <span>${esc(r.texto)}</span>
+                </label>`).join('')}
+            </div>
+          </fieldset>`).join('');
+    
+        this.innerHTML = `
+          <section class="page narrow exam-page">
+            <div class="timer-bar"><acme-timer id="timer"></acme-timer></div>
+    
+            <header class="card exam-header">
+              <h1 tabindex="-1">${esc(e.titulo)}</h1>
+              <p class="muted">Estudiante: <strong>${esc(p.nombre)}</strong> · ID ${esc(p.identificacion)}</p>
+              <dl class="facts">
+                <div><dt>Total de preguntas</dt><dd>${e.preguntas.length}</dd></div>
+                <div><dt>Para aprobar</dt><dd>${e.aprobacion}%</dd></div>
+                <div><dt>Respondidas</dt><dd id="answered">0</dd></div>
+              </dl>
+            </header>
+    
+            <form id="exam-form" novalidate>
+              ${questions}
+              <div class="finish-bar">
+                <button class="btn btn-primary btn-lg" type="submit">Terminar examen</button>
+              </div>
+            </form>
+          </section>`;
+    
+        const form = this.$('#exam-form');
+        const timer = this.$('#timer');
+        const updateCount = () => { this.$('#answered').textContent = `${Object.keys(p.answers).length}/${e.preguntas.length}`; };
+        updateCount();
+    
+        form.addEventListener('change', (ev) => {
+          const input = ev.target;
+          if (input.type !== 'radio') return;
+          p.answers[input.name.slice(2)] = input.value;
+          sessionStore.write(progressKey(e.id), p);
+          input.closest('fieldset').classList.add('answered');
+          updateCount();
+        });
+        // Marca visualmente las ya respondidas (al reanudar).
+        Object.keys(p.answers).forEach((qid) => this.$(`fieldset[data-q="${CSS.escape(qid)}"]`)?.classList.add('answered'));
+    
+        form.addEventListener('submit', async (ev) => {
+          ev.preventDefault();
+          const pending = e.preguntas.length - Object.keys(p.answers).length;
+          const ok = await confirmDialog({
+            title: 'Terminar examen',
+            message: pending > 0
+              ? `Tienes ${pending} ${pending === 1 ? 'pregunta sin responder' : 'preguntas sin responder'}. ¿Quieres terminar de todas formas?`
+              : '¿Seguro que quieres terminar y ver tu resultado?',
+            confirmText: 'Terminar', cancelText: 'Seguir respondiendo',
+          });
+          if (ok) this.#finish('usuario');
+        });
+    
+        timer.addEventListener('timer-end', () => this.#finish('tiempo'));
+        timer.start(p.deadline, e.tiempo * 60);
+      }
